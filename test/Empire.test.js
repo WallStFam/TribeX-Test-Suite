@@ -28,6 +28,8 @@ describe("Empire", function () {
     let rootHashOG, rootHashHexOG, whitelistOG;
     let hexProof;
 
+    let maxSupply;
+
     const aa = "0xaBffc43Bafd9c811a351e7051feD9d8be2ad082f";
 
     let costWhitelistedOG;
@@ -38,34 +40,23 @@ describe("Empire", function () {
     let maxMintAmountWhitelist;
     let maxMintAmountPublicSale;
 
-    const baseURI_1 = "https://baseURI-1/";
-    const baseURI_2 = "https://baseURI-2/";
-    const baseURI_3 = "https://baseURI-3/";
-
-    const [
-        name,
-        symbol,
-        initNotRevealedURI,
-        phaseMaxSupply1,
-        phaseMaxSupply2,
-        phaseMaxSupply3,
-    ] = require("../scripts/constructorArguments");
+    const baseURI = "https://baseURI/";
 
     function etherPrice(price, mul = 1) {
         return ethers.utils.parseEther(price.toString()).mul(mul).toString();
     }
 
     beforeEach(async () => {
-        [owner, alice, bob, charlie, dennis, eric, yetiOwner1, yetiOwner2, _] = await ethers.getSigners();
+        [owner, alice, bob, charlie, dennis, eric, _] = await ethers.getSigners();
 
-        const WallStMoms = await ethers.getContractFactory("WallStMoms");
-        contract = await WallStMoms.deploy(name, symbol, initNotRevealedURI, phaseMaxSupply1, phaseMaxSupply2, phaseMaxSupply3);
+        const Empire = await ethers.getContractFactory("Empire");
+        contract = await Empire.deploy();
         await contract.deployed();
 
         // There are 3 whitelists: whitelist Super Frens, normal whitelist and whitelist for free nint with dads
         whitelistOG = [alice.address, bob.address];
-        const merkleTreeSF = getMerkleTreeFromWhitelist(whitelistOG);
-        rootHashOG = merkleTreeSF.getRoot();
+        const merkleTreeOG = getMerkleTreeFromWhitelist(whitelistOG);
+        rootHashOG = merkleTreeOG.getRoot();
         rootHashHexOG = "0x" + rootHashOG.toString("hex");
 
         whitelist = [alice.address, charlie.address];
@@ -73,27 +64,19 @@ describe("Empire", function () {
         rootHash = merkleTree.getRoot();
         rootHashHex = "0x" + rootHash.toString("hex");
 
-        whitelistFreeMint = [
-            { address: dennis.address, amount: 2 },
-            { address: eric.address, amount: 20 },
-        ];
-        const merkleTreeFreeMint = getMerkleTreeFromWhitelistWithAmounts(whitelistFreeMint);
-        rootHashFreeMint = merkleTreeFreeMint.getRoot();
-        rootHashHexFreeMint = "0x" + rootHashFreeMint.toString("hex");
+        await contract.setOGMerkleRoot(rootHashOG);
+        await contract.setWLMerkleRoot(rootHash);
 
-        await contract.addWhiteYetiAddresses([yetiOwner1.address, yetiOwner2.address]);
+        maxMintAmountWhitelistOG = await contract.ADDRESS_OG_MAX_MINTS();
+        maxMintAmountWhitelist = await contract.ADDRESS_WL_MAX_MINTS();
+        maxMintAmountPublicSale = await contract.PUBLIC_MINT_PER_TX();
+        maxMintAmount = await contract.ADDRESS_MAX_MINTS();
 
-        await contract.setWhitelist(rootHash);
-        await contract.setWhitelistSF(rootHashOG);
-        await contract.setWhitelistForFreeMint(rootHashFreeMint);
+        maxSupply = (await contract.maxSupply()).toNumber();
 
-        maxMintAmountWhitelistOG = await contract.maxMintAmountWhitelistSF();
-        maxMintAmountWhitelist = await contract.maxMintAmountWhitelist();
-        maxMintAmountPublicSale = await contract.maxMintAmountPublicSale();
-
-        costWhitelistedOG = ethers.utils.formatEther(await contract.costWhitelistedSF());
-        costWhitelisted = ethers.utils.formatEther(await contract.costWhitelisted());
-        costPublicSale = ethers.utils.formatEther(await contract.costPublicSale());
+        costWhitelistedOG = ethers.utils.formatEther(await contract.OGprice());
+        costWhitelisted = ethers.utils.formatEther(await contract.WLprice());
+        costPublicSale = ethers.utils.formatEther(await contract.price());
     });
 
     describe("Deployment", () => {
@@ -101,260 +84,100 @@ describe("Empire", function () {
             expect(await contract.owner()).to.equal(owner.address);
         });
 
-        it("Should have set notRevealedURI", async () => {
-            expect(await contract.notRevealedURI()).to.equal(initNotRevealedURI);
+        it('Should have set name to "TRIBE-X-ACT-1"', async () => {
+            expect(await contract.name()).to.equal("TRIBE-X-ACT-1");
         });
 
-        it('Should have set name to "Wall St Moms"', async () => {
-            expect(await contract.name()).to.equal("Wall St Moms");
+        it('Should have set symbol to "TRIBEX"', async () => {
+            expect(await contract.symbol()).to.equal("TRIBEX");
         });
 
-        it('Should have set symbol to "WSM"', async () => {
-            expect(await contract.symbol()).to.equal("WSM");
-        });
-
-        it("MaxMintAmounts should be 1, 3, 3 at initialization", async () => {
-            expect(maxMintAmountPublicSale).to.equal(3);
+        it("MaxMintAmounts should be 3, 3, 12, 12 at initialization", async () => {
+            expect(maxMintAmountPublicSale).to.equal(12);
             expect(maxMintAmountWhitelist).to.equal(3);
-            expect(maxMintAmountWhitelistOG).to.equal(1);
+            expect(maxMintAmountWhitelistOG).to.equal(3);
+            expect(maxMintAmount).to.equal(12);
+        });
+    });
+
+    describe.only("Whitelist OG", () => {
+        it("Only the owner can set a new whitelist", async () => {
+            await contract.setOGMerkleRoot(rootHashOG);
+            expect(await contract.OGMerkleRoot()).to.equal(rootHashHexOG);
+
+            let randomAddress = ethers.Wallet.createRandom().address;
+            await expect(contract.connect(randomAddress).setOGMerkleRoot(rootHashOG)).to.be.reverted;
+        });
+
+        it("If setting a new whitelist, users that were whitelisted previously are not whitelisted anymore", async () => {
+            await contract.setOnlyOG();
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG) }); // this works
+
+            const newWhitelist = generateRandomAddresses(10); // create a new whitelist with only random addresses
+            const newMerkleTree = getMerkleTreeFromWhitelist(newWhitelist);
+            await contract.setOGMerkleRoot(newMerkleTree.getRoot());
+
+            hexProof = getHexProof(newWhitelist, alice.address);
+            expect(hexProof.length).to.equal(0);
+            expect(await contract.connect(alice).mintOGSale(1, hexProof)).to.be.reverted;
+        });
+
+        it("Should fail to mint if sales are inactive", async () => {
+            await contract.connect(owner).toggleSaleOff();
+
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await expect(
+                contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG) })
+            ).to.be.revertedWith("Family presale must be active to mint");
+        });
+
+        it("Should succeed if minting sales are active", async () => {
+            await contract.setOnlyOG();
+
+            hexProof = getHexProof(whitelist, alice.address);
+            await contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG) });
+            expect(await contract.balanceOf(alice.address)).to.equal(1);
+        });
+
+        it("Cannot mint more than max mint amount", async () => {
+            await contract.setOnlyOG();
+
+            await contract.connect(alice).mintOGSale(maxMintAmountWhitelistOG - 1, {
+                value: etherPrice(costWhitelistedOG, maxMintAmountWhitelistOG - 1),
+            });
+            await expect(
+                contract.connect(alice).mintOGSale(2, {
+                    value: etherPrice(costWhitelistedOG, 2),
+                })
+            ).to.be.revertedWith("You are trying to mint more than their whitelist amount");
+        });
+
+        it("Cannot mint more than collection max supply", async () => {
+            await contract.setOnlyOG();
+            await contract.setOGMax(maxSupply);
+
+            await contract.connect(alice).mintOGSale(maxSupply - 1, {
+                value: etherPrice(costWhitelistedOG, maxSupply - 1),
+            });
+            await expect(
+                contract.connect(alice).mintOGSale(2, {
+                    value: etherPrice(costWhitelistedOG, 2),
+                })
+            ).to.be.revertedWith("This would exceed the max number of mints allowed");
+        });
+
+        it("Should fail if payed value is low", async () => {
+            await contract.setOnlyOG();
+
+            hexProof = getHexProof(whitelist, alice.address);
+            await expect(
+                contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG * 0.9) })
+            ).to.be.revertedWith("Not enough ether to mint, please add more eth to your wallet");
         });
     });
 
     describe("Whitelist", () => {
-        it("Try many random addresses and check they are not whitelisted", async () => {
-            const randomCount = 100;
-            for (let i = 0; i < randomCount; i++) {
-                const randomAddress = ethers.Wallet.createRandom().address;
-                hexProof = getHexProof(whitelist, randomAddress);
-                expect(hexProof.length).to.equal(0);
-                expect(await contract.isWhitelisted(randomAddress, hexProof)).to.equal(false);
-            }
-        });
-
-        it("Should allow anyone check if address is whitelisted", async () => {
-            hexProof = getHexProof(whitelist, alice.address);
-            expect(await contract.connect(bob).isWhitelisted(alice.address, hexProof)).to.equal(true);
-        });
-
-        it("All whitelisted addresses are whitelisted", async () => {
-            for (let i = 0; i < whitelist.length; i++) {
-                hexProof = getHexProof(whitelist, whitelist[i]);
-                expect(await contract.isWhitelisted(whitelist[i], hexProof)).to.equal(true);
-            }
-        });
-
-        it("Only the owner can set a new whitelist", async () => {
-            await contract.setWhitelist(rootHash);
-            expect(await contract.merkleRoot()).to.equal(rootHashHex);
-
-            const randomAddress = ethers.Wallet.createRandom().address;
-            await expect(contract.connect(randomAddress).setWhitelist(rootHash)).to.be.reverted;
-        });
-
-        it("If setting a new whitelist, users that were whitelisted previously are not whitelisted anymore", async () => {
-            hexProof = getHexProof(whitelist, alice.address);
-            expect(await contract.isWhitelisted(alice.address, hexProof)).to.equal(true);
-
-            const newWhitelist = generateRandomAddresses(10); // create a new whitelist with only random addresses
-            const newMerkleTree = getMerkleTreeFromWhitelist(newWhitelist);
-            await contract.setWhitelist(newMerkleTree.getRoot());
-
-            hexProof = getHexProof(newWhitelist, alice.address);
-            expect(hexProof.length).to.equal(0);
-            expect(await contract.isWhitelisted(alice.address, hexProof)).to.equal(false);
-        });
-
-        it("If setting a new whitelist, the new users in the whitelist are effectively whitelisted", async () => {
-            // Generate a list of random addresses(because they are random, these addresses
-            // are not in the original whitelist)
-            const randomAddrs = generateRandomAddresses(10);
-
-            // Confirm that these addresses are not in the contract whitelist
-            for (let i = 0; i < randomAddrs.length; i++) {
-                hexProof = getHexProof(whitelist, randomAddrs[i]);
-                expect(hexProof.length).to.equal(0);
-                expect(await contract.isWhitelisted(randomAddrs[i], hexProof)).to.equal(false);
-            }
-            const newWhitelist = randomAddrs;
-            const newMerkleTree = getMerkleTreeFromWhitelist(newWhitelist);
-            await contract.setWhitelist(newMerkleTree.getRoot());
-
-            for (let i = 0; i < newWhitelist.length; i++) {
-                hexProof = getHexProof(newWhitelist, randomAddrs[i]);
-                expect(await contract.isWhitelisted(newWhitelist[i], hexProof)).to.equal(true);
-            }
-        });
-
-        it("A non whitelisted user with a correct hexProof is not whitelisted", async () => {
-            const randomAddress = ethers.Wallet.createRandom().address;
-            const whitelistedAddress = whitelist[getRandomInt(whitelist.length)];
-            hexProof = getHexProof(whitelist, whitelistedAddress);
-            expect(hexProof.length).to.be.greaterThan(0);
-            expect(await contract.isWhitelisted(randomAddress, hexProof)).to.equal(false);
-        });
-
-        it("A whitelisted user with an incorrect hexProof is not whitelisted", async () => {
-            const randomAddress = ethers.Wallet.createRandom().address;
-            hexProof = getHexProof(whitelist, randomAddress);
-            expect(hexProof.length).to.eq(0);
-            const whitelistedAddress = whitelist[getRandomInt(whitelist.length)];
-            expect(await contract.isWhitelisted(whitelistedAddress, hexProof)).to.equal(false);
-        });
-
-        it("A whitelisted user can only mint if the phase is active", async () => {
-            await contract.setWhitelistSale();
-            hexProof = getHexProof(whitelist, alice.address);
-            await contract.setPhase(2);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase1(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Phase 1 is not active");
-
-            await contract.setPhase(3);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase1(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Phase 1 is not active");
-
-            await contract.setPhase(1);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase2(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Phase 2 is not active");
-
-            await contract.setPhase(3);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase2(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Phase 2 is not active");
-
-            await contract.setPhase(1);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase3(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Phase 3 is not active");
-
-            await contract.setPhase(2);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase3(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Phase 3 is not active");
-        });
-
-        it("Should fail if minting is paused", async () => {
-            await contract.connect(owner).setPaused(true);
-
-            await contract.setWhitelistSale();
-            hexProof = getHexProof(whitelist, alice.address);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase1(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Please wait until unpaused");
-
-            await contract.setPhase(2);
-            await contract.setWhitelistSale();
-            hexProof = getHexProof(whitelist, charlie.address);
-            await expect(
-                contract.connect(charlie).mintWhitelisted_phase2(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Please wait until unpaused");
-
-            await contract.setPhase(3);
-            hexProof = getHexProof(whitelist, charlie.address);
-            await expect(
-                contract.connect(charlie).mintWhitelisted_phase3(1, hexProof, { value: etherPrice(costWhitelisted) })
-            ).to.be.revertedWith("Please wait until unpaused");
-        });
-
-        it("Should succeed if minting is unpaused", async () => {
-            await contract.connect(owner).setPaused(false);
-
-            await contract.setWhitelistSale();
-            hexProof = getHexProof(whitelist, alice.address);
-            await contract.connect(alice).mintWhitelisted_phase1(1, hexProof, { value: etherPrice(costWhitelisted) });
-            expect(await contract.balanceOf(alice.address)).to.equal(1);
-
-            await contract.setPhase(2);
-            await contract.connect(alice).mintWhitelisted_phase2(1, hexProof, { value: etherPrice(costWhitelisted) });
-            expect(await contract.balanceOf(alice.address)).to.equal(2);
-
-            await contract.setPhase(3);
-            await contract.connect(alice).mintWhitelisted_phase3(1, hexProof, { value: etherPrice(costWhitelisted) });
-            expect(await contract.balanceOf(alice.address)).to.equal(3);
-        });
-
-        it("Cannot mint more than phase max supply", async () => {
-            await contract.setPublicSale();
-
-            await contract.setPhaseMaxSupply(1, 10);
-            await contract.setMaxMintAmountPublicSale(100); // set this after setting the phase because the phase changes the max supply
-
-            await contract.connect(alice).mintPublicSale(9, {
-                value: etherPrice(costPublicSale, 9),
-            });
-            await expect(
-                contract.connect(alice).mintPublicSale(2, {
-                    value: etherPrice(costPublicSale, 2),
-                })
-            ).to.be.revertedWith("Max supply exceeded");
-
-            await contract.setPhase(2);
-            await contract.setPhaseMaxSupply(2, 10);
-            await contract.setMaxMintAmountPublicSale(100); // set this after setting the phase because the phase changes the max supply
-            await contract.connect(alice).mintPublicSale(10, {
-                value: etherPrice(costPublicSale, 10),
-            });
-            await expect(
-                contract.connect(alice).mintPublicSale(2, {
-                    value: etherPrice(costPublicSale, 2),
-                })
-            ).to.be.revertedWith("Max supply exceeded");
-
-            await contract.setPhase(3);
-            await contract.setMaxMintAmountPublicSale(100); // set this after setting the phase because the phase changes the max supply
-
-            await contract.connect(alice).mintPublicSale(2, {
-                value: etherPrice(costPublicSale, 2),
-            });
-            expect(await contract.balanceOf(alice.address)).to.equal(21);
-        });
-
-        it("Should fail if payed value is low", async () => {
-            await contract.setWhitelistSale();
-            hexProof = getHexProof(whitelist, alice.address);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase1(1, hexProof, { value: etherPrice(costWhitelisted * 0.9) })
-            ).to.be.revertedWith("Insufficient ETH amount");
-
-            await contract.setPhase(2);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase2(1, hexProof, { value: etherPrice(costWhitelisted * 0.9) })
-            ).to.be.revertedWith("Insufficient ETH amount");
-
-            await contract.setPhase(2);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase3(1, hexProof, { value: etherPrice(costWhitelisted * 0.9) })
-            ).to.be.revertedWith("Insufficient ETH amount");
-        });
-
-        it("Users cannot mint more than max amount", async () => {
-            await contract.setWhitelistSale();
-            hexProof = getHexProof(whitelist, alice.address);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase1(maxMintAmountWhitelist + 1, hexProof, {
-                    value: etherPrice(costPublicSale, maxMintAmountWhitelist + 1),
-                })
-            ).to.be.revertedWith("Max mint amount exceeded");
-
-            await contract.setPhase(2);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase2(maxMintAmountWhitelist + 1, hexProof, {
-                    value: etherPrice(costPublicSale, maxMintAmountWhitelist + 1),
-                })
-            ).to.be.revertedWith("Max mint amount exceeded");
-
-            await contract.setPhase(3);
-            await expect(
-                contract.connect(alice).mintWhitelisted_phase3(maxMintAmountWhitelist + 1, hexProof, {
-                    value: etherPrice(costPublicSale, maxMintAmountWhitelist + 1),
-                })
-            ).to.be.revertedWith("Max mint amount exceeded");
-        });
-    });
-
-    describe("Whitelist Super Frens", () => {
         it("Try many random addresses and check they are not whitelisted", async () => {
             const randomCount = 100;
             for (let i = 0; i < randomCount; i++) {
@@ -448,7 +271,7 @@ describe("Empire", function () {
         });
 
         it("Should fail if minting is paused", async () => {
-            await contract.connect(owner).setPaused(true);
+            await contract.setPaused(true);
 
             await contract.setWhitelistSFSale();
             hexProof = getHexProof(whitelistOG, bob.address);
@@ -458,7 +281,7 @@ describe("Empire", function () {
         });
 
         it("Should succeed if minting is unpaused", async () => {
-            await contract.connect(owner).setPaused(false);
+            await contract.setPaused(false);
 
             await contract.setWhitelistSFSale();
             hexProof = getHexProof(whitelistOG, bob.address);
@@ -1053,10 +876,10 @@ describe("Empire", function () {
                 expect(await contract.tokenURI(i)).to.equal(initNotRevealedURI);
             }
 
-            await contract.revealPhase1(baseURI_1);
+            await contract.revealPhase1(baseURI);
 
             for (let i = 1; i <= 10; i++) {
-                expect(await contract.tokenURI(i)).to.equal(baseURI_1 + i + ".json");
+                expect(await contract.tokenURI(i)).to.equal(baseURI + i + ".json");
             }
             for (let i = 11; i <= 20; i++) {
                 expect(await contract.tokenURI(i)).to.equal(initNotRevealedURI);
@@ -1068,7 +891,7 @@ describe("Empire", function () {
             await contract.revealPhase2(baseURI_2);
 
             for (let i = 1; i <= 10; i++) {
-                expect(await contract.tokenURI(i)).to.equal(baseURI_1 + i + ".json");
+                expect(await contract.tokenURI(i)).to.equal(baseURI + i + ".json");
             }
             for (let i = 11; i <= 20; i++) {
                 expect(await contract.tokenURI(i)).to.equal(baseURI_2 + i + ".json");
@@ -1080,7 +903,7 @@ describe("Empire", function () {
             await contract.revealPhase3(baseURI_3);
 
             for (let i = 1; i <= 10; i++) {
-                expect(await contract.tokenURI(i)).to.equal(baseURI_1 + i + ".json");
+                expect(await contract.tokenURI(i)).to.equal(baseURI + i + ".json");
             }
             for (let i = 11; i <= 20; i++) {
                 expect(await contract.tokenURI(i)).to.equal(baseURI_2 + i + ".json");
@@ -1185,10 +1008,10 @@ describe("Empire", function () {
                 expect(await contract.tokenURI(i)).to.equal(initNotRevealedURI);
             }
 
-            await contract.revealPhase1(baseURI_1);
+            await contract.revealPhase1(baseURI);
 
             for (let i = 1; i <= 5; i++) {
-                expect(await contract.tokenURI(i)).to.equal(baseURI_1 + i + ".json");
+                expect(await contract.tokenURI(i)).to.equal(baseURI + i + ".json");
             }
 
             await contract.setPhase(2);
@@ -1197,7 +1020,7 @@ describe("Empire", function () {
             await contract.mintPublicSale(10, { value: etherPrice(costPublicSale, 10) });
 
             for (let i = 1; i <= 10; i++) {
-                expect(await contract.tokenURI(i)).to.equal(baseURI_1 + i + ".json");
+                expect(await contract.tokenURI(i)).to.equal(baseURI + i + ".json");
             }
             for (let i = 11; i <= 15; i++) {
                 expect(await contract.tokenURI(i)).to.equal(initNotRevealedURI);
@@ -1210,7 +1033,7 @@ describe("Empire", function () {
             await contract.mintPublicSale(40, { value: etherPrice(costPublicSale, 40) });
 
             for (let i = 1; i <= 10; i++) {
-                expect(await contract.tokenURI(i)).to.equal(baseURI_1 + i + ".json");
+                expect(await contract.tokenURI(i)).to.equal(baseURI + i + ".json");
             }
             for (let i = 11; i <= 20; i++) {
                 expect(await contract.tokenURI(i)).to.equal(baseURI_2 + i + ".json");
@@ -1224,7 +1047,7 @@ describe("Empire", function () {
             await expect(contract.connect(bob).setNotRevealedURI(initNotRevealedURI)).to.be.revertedWith(
                 "Ownable: caller is not the owner"
             );
-            await expect(contract.connect(alice).setBaseURI(baseURI_1, 0)).to.be.revertedWith("Ownable: caller is not the owner");
+            await expect(contract.connect(alice).setBaseURI(baseURI, 0)).to.be.revertedWith("Ownable: caller is not the owner");
             await expect(contract.connect(bob).setBaseURI(baseURI_2, 0)).to.be.revertedWith("Ownable: caller is not the owner");
             await expect(contract.connect(alice).setBaseURI(baseURI_3, 0)).to.be.revertedWith("Ownable: caller is not the owner");
         });
@@ -1239,7 +1062,7 @@ describe("Empire", function () {
         });
 
         it("Only owner can freeze metadata", async () => {
-            await contract.revealPhase1(baseURI_1);
+            await contract.revealPhase1(baseURI);
             await contract.revealPhase2(baseURI_2);
             await contract.revealPhase3(baseURI_3);
             await contract.setPhase(3);
@@ -1250,12 +1073,12 @@ describe("Empire", function () {
         });
 
         it("If metadata is frozen, baseURI cannot change anymore", async () => {
-            await contract.revealPhase1(baseURI_1);
+            await contract.revealPhase1(baseURI);
             await contract.revealPhase2(baseURI_2);
             await contract.revealPhase3(baseURI_3);
             await contract.setPhase(3);
             await contract.connect(owner).freezeMetadata();
-            await expect(contract.connect(owner).setBaseURI(baseURI_1, 0)).to.be.revertedWith("Metadata is frozen");
+            await expect(contract.connect(owner).setBaseURI(baseURI, 0)).to.be.revertedWith("Metadata is frozen");
 
             await contract.unreveal();
 
@@ -1294,18 +1117,18 @@ describe("Empire", function () {
             await contract.setPhaseMaxSupply(1, 1);
             await contract.setPhaseMaxSupply(2, 1);
 
-            await contract.revealPhase1(baseURI_1);
-            expect(await contract.tokenURI(1)).to.equal(baseURI_1 + 1 + ".json");
+            await contract.revealPhase1(baseURI);
+            expect(await contract.tokenURI(1)).to.equal(baseURI + 1 + ".json");
             await contract.unreveal();
             expect(await contract.tokenURI(1)).to.equal(initNotRevealedURI);
 
-            await contract.revealPhase1(baseURI_1);
+            await contract.revealPhase1(baseURI);
             await contract.revealPhase2(baseURI_2);
             expect(await contract.tokenURI(2)).to.equal(baseURI_2 + 2 + ".json");
             await contract.unreveal();
             expect(await contract.tokenURI(2)).to.equal(initNotRevealedURI);
 
-            await contract.revealPhase1(baseURI_1);
+            await contract.revealPhase1(baseURI);
             await contract.revealPhase2(baseURI_2);
             await contract.revealPhase3(baseURI_3);
             expect(await contract.tokenURI(3)).to.equal(baseURI_3 + 3 + ".json");
@@ -1316,11 +1139,11 @@ describe("Empire", function () {
         it("Can only reveal in order", async () => {
             await expect(contract.revealPhase2(baseURI_2)).to.be.revertedWith("Cannot reveal this phase");
             await expect(contract.revealPhase3(baseURI_3)).to.be.revertedWith("Cannot reveal this phase");
-            contract.revealPhase1(baseURI_1);
-            await expect(contract.revealPhase1(baseURI_1)).to.be.revertedWith("Cannot reveal this phase");
+            contract.revealPhase1(baseURI);
+            await expect(contract.revealPhase1(baseURI)).to.be.revertedWith("Cannot reveal this phase");
             await expect(contract.revealPhase3(baseURI_3)).to.be.revertedWith("Cannot reveal this phase");
             contract.revealPhase2(baseURI_2);
-            await expect(contract.revealPhase1(baseURI_1)).to.be.revertedWith("Cannot reveal this phase");
+            await expect(contract.revealPhase1(baseURI)).to.be.revertedWith("Cannot reveal this phase");
             await expect(contract.revealPhase2(baseURI_2)).to.be.revertedWith("Cannot reveal this phase");
             contract.revealPhase3(baseURI_3);
         });

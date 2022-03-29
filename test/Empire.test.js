@@ -11,7 +11,7 @@ function generateRandomAddresses(count) {
     return addrs;
 }
 
-describe("Empire", function () {
+describe("Tribe-X", function () {
     let contract, owner;
     let rootHash, rootHashHex, whitelist;
     let rootHashOG, rootHashHexOG, whitelistOG;
@@ -70,27 +70,6 @@ describe("Empire", function () {
         costWhitelistedOG = ethers.utils.formatEther(await contract.OGprice());
         costWhitelisted = ethers.utils.formatEther(await contract.WLprice());
         costPublicSale = ethers.utils.formatEther(await contract.price());
-    });
-
-    describe("Deployment", () => {
-        it("Should have set the right owner", async () => {
-            expect(await contract.owner()).to.equal(owner.address);
-        });
-
-        it('Should have set name to "TRIBE-X-ACT-1"', async () => {
-            expect(await contract.name()).to.equal("TRIBE-X-ACT-1");
-        });
-
-        it('Should have set symbol to "TRIBEX"', async () => {
-            expect(await contract.symbol()).to.equal("TRIBEX");
-        });
-
-        it("MaxMintAmounts should be 3, 3, 12, 12 at initialization", async () => {
-            expect(maxMintAmountPublicSale).to.equal(12);
-            expect(maxMintAmountWhitelist).to.equal(3);
-            expect(maxMintAmountWhitelistOG).to.equal(3);
-            expect(maxPerAddress).to.equal(12);
-        });
     });
 
     describe("Whitelist OG", () => {

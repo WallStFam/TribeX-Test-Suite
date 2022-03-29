@@ -1,13 +1,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 require("dotenv").config();
-const {
-    getMerkleTreeFromWhitelist,
-    getHexProof,
-    getHexProofWithAmount,
-    getMerkleTreeFromWhitelistWithAmounts,
-    getFreeMintAmountFromWhitelist,
-} = require("../scripts/utils");
+const { getMerkleTreeFromWhitelist, getHexProof } = require("../scripts/utils");
 
 function generateRandomAddresses(count) {
     let addrs = [];
@@ -15,11 +9,6 @@ function generateRandomAddresses(count) {
         addrs.push(ethers.Wallet.createRandom().address);
     }
     return addrs;
-}
-
-// ger random int
-function getRandomInt(max) {
-    return Math.floor(Math.random() * Math.floor(max));
 }
 
 describe("Empire", function () {

@@ -41,7 +41,7 @@ describe("Empire", function () {
     let maxMintAmountPublicSale;
     let maxPerAddress;
 
-    const notRevealedURI = "https://baseURI/notRevealed.json";
+    const notRevealedURI = "https://baseURI/notRevealed_";
     const baseURI = "https://baseURI/";
 
     function etherPrice(price, mul = 1) {
@@ -500,6 +500,52 @@ describe("Empire", function () {
             expect(await contract.PUBLIC_MINT_PER_TX()).to.be.equal(newMaxMintAmountPublicSale);
             expect(await contract.ADDRESS_MAX_MINTS()).to.be.equal(newMaxPerAddress);
         });
+
+        it("Owner can reduce supply limit", async () => {
+            await contract.changeSupplyLimit(3);
+            expect(await contract.maxSupply()).to.be.equal(3);
+
+            await contract.toggleAllsaleOn();
+
+            await contract.connect(charlie).mint(3, { value: etherPrice(costPublicSale, 3) });
+
+            // Checck that cannot mint any more tokens in any sale
+            await expect(contract.connect(charlie).mint(1, { value: etherPrice(costPublicSale, 1) })).to.be.revertedWith(
+                "Mint would exceed max supply of mints"
+            );
+
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await expect(
+                contract.connect(alice).mintOGSale(1, hexProof, {
+                    value: etherPrice(costWhitelistedOG, 1),
+                })
+            ).to.be.revertedWith("This would exceed the max number of mints allowed");
+
+            hexProof = getHexProof(whitelist, alice.address);
+            await expect(
+                contract.connect(alice).mintWLSale(1, hexProof, {
+                    value: etherPrice(costWhitelisted, 1),
+                })
+            ).to.be.revertedWith("Mint would exceed max supply of mints");
+        });
+
+        it("If all sales are on, users can mint in whitelist and public sale", async () => {
+            await contract.toggleAllsaleOn();
+
+            // Use alice because she is in both whitelists
+
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await contract.connect(alice).mintOGSale(1, hexProof, {
+                value: etherPrice(costWhitelistedOG),
+            });
+            hexProof = getHexProof(whitelist, alice.address);
+            await contract.connect(alice).mintWLSale(1, hexProof, {
+                value: etherPrice(costWhitelisted),
+            });
+            await contract.connect(alice).mint(1, { value: etherPrice(costPublicSale) });
+
+            expect(await contract.balanceOf(alice.address)).to.be.equal(3);
+        });
     });
 
     describe("Metadata", () => {
@@ -509,7 +555,7 @@ describe("Empire", function () {
             await contract.mint(5, { value: etherPrice(costPublicSale, 5) });
 
             for (let i = 1; i <= 5; i++) {
-                expect(await contract.tokenURI(i)).to.equal(notRevealedURI);
+                expect(await contract.tokenURI(i)).to.equal(notRevealedURI + i);
             }
 
             await contract.setBaseURI(baseURI);
@@ -524,7 +570,7 @@ describe("Empire", function () {
         });
     });
 
-    describe.only("Withdraw", async () => {
+    describe("Withdraw", async () => {
         it("Calling withdraw should send 100% AA_ADDRESS", async () => {
             await contract.setOnlyPublicSale();
 
@@ -604,17 +650,3 @@ describe("Empire", function () {
         });
     });
 });
-
-/* Missing tests
-    SafeTransferFrom is not working(it says the function doesn't exist)
-*/
-
-/* TODO
-
-- Check how it works with OpenSea when we are limiting approveForAll and transfer
-- Maybe reduce the error messages
-- Add the marketing guy(10%) to the withdraw function
-- (TBD) Wait for Phu to give me other people for the withdraw function
-- (Low priority) Add Nico and me to the withdraw
-- Check all tests one by one
-*/

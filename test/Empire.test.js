@@ -39,6 +39,7 @@ describe("Empire", function () {
     let maxMintAmountWhitelistOG;
     let maxMintAmountWhitelist;
     let maxMintAmountPublicSale;
+    let maxMintAmount;
 
     const baseURI = "https://baseURI/";
 
@@ -67,10 +68,10 @@ describe("Empire", function () {
         await contract.setOGMerkleRoot(rootHashOG);
         await contract.setWLMerkleRoot(rootHash);
 
-        maxMintAmountWhitelistOG = await contract.ADDRESS_OG_MAX_MINTS();
-        maxMintAmountWhitelist = await contract.ADDRESS_WL_MAX_MINTS();
-        maxMintAmountPublicSale = await contract.PUBLIC_MINT_PER_TX();
-        maxMintAmount = await contract.ADDRESS_MAX_MINTS();
+        maxMintAmountWhitelistOG = (await contract.ADDRESS_OG_MAX_MINTS()).toNumber();
+        maxMintAmountWhitelist = (await contract.ADDRESS_WL_MAX_MINTS()).toNumber();
+        maxMintAmountPublicSale = (await contract.PUBLIC_MINT_PER_TX()).toNumber();
+        maxMintAmount = (await contract.ADDRESS_MAX_MINTS()).toNumber();
 
         maxSupply = (await contract.maxSupply()).toNumber();
 
@@ -100,8 +101,8 @@ describe("Empire", function () {
         });
     });
 
-    describe.only("Whitelist OG", () => {
-        it("Only the owner can set a new whitelist", async () => {
+    describe("Whitelist OG", () => {
+        it("Only the owner can set a new OG whitelist", async () => {
             await contract.setOGMerkleRoot(rootHashOG);
             expect(await contract.OGMerkleRoot()).to.equal(rootHashHexOG);
 
@@ -109,7 +110,20 @@ describe("Empire", function () {
             await expect(contract.connect(randomAddress).setOGMerkleRoot(rootHashOG)).to.be.reverted;
         });
 
-        it("If setting a new whitelist, users that were whitelisted previously are not whitelisted anymore", async () => {
+        it("Can only mint if in OG whitelist", async () => {
+            await contract.setOnlyOG();
+
+            // alice is in whitelist
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG) });
+
+            // charlie is not in whitelist
+            hexProof = getHexProof(whitelistOG, charlie.address);
+            await expect(contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG) })).to.be
+                .reverted;
+        });
+
+        it("If setting a new OG whitelist, users that were whitelisted previously are not whitelisted anymore", async () => {
             await contract.setOnlyOG();
             hexProof = getHexProof(whitelistOG, alice.address);
             await contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG) }); // this works
@@ -120,10 +134,10 @@ describe("Empire", function () {
 
             hexProof = getHexProof(newWhitelist, alice.address);
             expect(hexProof.length).to.equal(0);
-            expect(await contract.connect(alice).mintOGSale(1, hexProof)).to.be.reverted;
+            await expect(contract.connect(alice).mintOGSale(1, hexProof)).to.be.reverted;
         });
 
-        it("Should fail to mint if sales are inactive", async () => {
+        it("Should fail to mint if OG sales are inactive", async () => {
             await contract.connect(owner).toggleSaleOff();
 
             hexProof = getHexProof(whitelistOG, alice.address);
@@ -132,10 +146,10 @@ describe("Empire", function () {
             ).to.be.revertedWith("Family presale must be active to mint");
         });
 
-        it("Should succeed if minting sales are active", async () => {
+        it("Should succeed to mint if OG sales are active", async () => {
             await contract.setOnlyOG();
 
-            hexProof = getHexProof(whitelist, alice.address);
+            hexProof = getHexProof(whitelistOG, alice.address);
             await contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG) });
             expect(await contract.balanceOf(alice.address)).to.equal(1);
         });
@@ -143,25 +157,44 @@ describe("Empire", function () {
         it("Cannot mint more than max mint amount", async () => {
             await contract.setOnlyOG();
 
-            await contract.connect(alice).mintOGSale(maxMintAmountWhitelistOG - 1, {
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await contract.connect(alice).mintOGSale(maxMintAmountWhitelistOG - 1, hexProof, {
                 value: etherPrice(costWhitelistedOG, maxMintAmountWhitelistOG - 1),
             });
             await expect(
-                contract.connect(alice).mintOGSale(2, {
+                contract.connect(alice).mintOGSale(2, hexProof, {
                     value: etherPrice(costWhitelistedOG, 2),
                 })
             ).to.be.revertedWith("You are trying to mint more than their whitelist amount");
         });
 
-        it("Cannot mint more than collection max supply", async () => {
+        it("Cannot mint more than address max amount", async () => {
             await contract.setOnlyOG();
-            await contract.setOGMax(maxSupply);
+            await contract.setOGMax(maxSupply + 100); // set more than maxAmount so this max limit is not reached
 
-            await contract.connect(alice).mintOGSale(maxSupply - 1, {
-                value: etherPrice(costWhitelistedOG, maxSupply - 1),
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await contract.connect(alice).mintOGSale(maxMintAmount - 1, hexProof, {
+                value: etherPrice(costWhitelistedOG, maxMintAmount - 1),
             });
             await expect(
-                contract.connect(alice).mintOGSale(2, {
+                contract.connect(alice).mintOGSale(2, hexProof, {
+                    value: etherPrice(costWhitelistedOG, 2),
+                })
+            ).to.be.revertedWith("You are trying to mint more than allocated tokens");
+        });
+
+        it("Cannot mint more than collection max supply", async () => {
+            await contract.setOnlyOG();
+            await contract.setOGMax(maxSupply + 100); // set more than maxAmount so this max limit is not reached
+            await contract.setMaxAddress(maxSupply + 100); // set more than maxAmount so this max limit is not reached
+
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await contract.connect(alice).mintOGSale(maxSupply - 1, hexProof, {
+                value: etherPrice(costWhitelistedOG, maxSupply - 1),
+            });
+
+            await expect(
+                contract.connect(alice).mintOGSale(2, hexProof, {
                     value: etherPrice(costWhitelistedOG, 2),
                 })
             ).to.be.revertedWith("This would exceed the max number of mints allowed");
@@ -170,175 +203,119 @@ describe("Empire", function () {
         it("Should fail if payed value is low", async () => {
             await contract.setOnlyOG();
 
-            hexProof = getHexProof(whitelist, alice.address);
+            hexProof = getHexProof(whitelistOG, alice.address);
             await expect(
                 contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG * 0.9) })
             ).to.be.revertedWith("Not enough ether to mint, please add more eth to your wallet");
         });
     });
 
-    describe("Whitelist", () => {
-        it("Try many random addresses and check they are not whitelisted", async () => {
-            const randomCount = 100;
-            for (let i = 0; i < randomCount; i++) {
-                const randomAddress = ethers.Wallet.createRandom().address;
-                hexProof = getHexProof(whitelistOG, randomAddress);
-                expect(hexProof.length).to.equal(0);
-                expect(await contract.isWhitelistedSF(randomAddress, hexProof)).to.equal(false);
-            }
-        });
-
-        it("Should allow anyone check if address is whitelisted", async () => {
-            hexProof = getHexProof(whitelistOG, bob.address);
-            expect(await contract.connect(bob).isWhitelistedSF(bob.address, hexProof)).to.equal(true);
-        });
-
-        it("All whitelisted addresses are whitelisted", async () => {
-            for (let i = 0; i < whitelistOG.length; i++) {
-                hexProof = getHexProof(whitelistOG, whitelistOG[i]);
-                expect(await contract.isWhitelistedSF(whitelistOG[i], hexProof)).to.equal(true);
-            }
-        });
-
+    describe.only("Whitelist", () => {
         it("Only the owner can set a new whitelist", async () => {
-            await contract.setWhitelistSF(rootHashOG);
-            expect(await contract.merkleRootSF()).to.equal(rootHashHexOG);
+            await contract.setWLMerkleRoot(rootHash);
+            expect(await contract.WLMerkleRoot()).to.equal(rootHashHex);
 
-            await expect(contract.connect(bob.address).setWhitelistSF(rootHashOG)).to.be.reverted;
-            const randomAddress = ethers.Wallet.createRandom().address;
-            await expect(contract.connect(randomAddress).setWhitelistSF(rootHashOG)).to.be.reverted;
+            let randomAddress = ethers.Wallet.createRandom().address;
+            await expect(contract.connect(randomAddress).setWLMerkleRoot(rootHash)).to.be.reverted;
+        });
+
+        it("Can only mint if in whitelist", async () => {
+            await contract.setOnlyWhitelisted();
+
+            // alice is in whitelist
+            hexProof = getHexProof(whitelist, alice.address);
+            await contract.connect(alice).mintWLSale(1, hexProof, { value: etherPrice(costWhitelisted) });
+
+            // charlie is not in whitelist
+            hexProof = getHexProof(whitelist, charlie.address);
+            await expect(contract.connect(alice).mintWLSale(1, hexProof, { value: etherPrice(costWhitelisted) })).to.be.reverted;
         });
 
         it("If setting a new whitelist, users that were whitelisted previously are not whitelisted anymore", async () => {
-            hexProof = getHexProof(whitelistOG, bob.address);
-            expect(await contract.isWhitelistedSF(bob.address, hexProof)).to.equal(true);
+            await contract.setOnlyWhitelisted();
+
+            hexProof = getHexProof(whitelist, alice.address);
+            await contract.connect(alice).mintWLSale(1, hexProof, { value: etherPrice(costWhitelisted) }); // this works
 
             const newWhitelist = generateRandomAddresses(10); // create a new whitelist with only random addresses
             const newMerkleTree = getMerkleTreeFromWhitelist(newWhitelist);
-            await contract.setWhitelistSF(newMerkleTree.getRoot());
+            await contract.setWLMerkleRoot(newMerkleTree.getRoot());
 
-            hexProof = getHexProof(newWhitelist, bob.address);
+            hexProof = getHexProof(newWhitelist, alice.address);
             expect(hexProof.length).to.equal(0);
-            expect(await contract.isWhitelistedSF(bob.address, hexProof)).to.equal(false);
+            await expect(contract.connect(alice).mintWLSale(1, hexProof)).to.be.reverted;
         });
 
-        it("If setting a new whitelist, the new users in the whitelist are effectively whitelisted", async () => {
-            // Generate a list of random addresses(because they are random, these addresses
-            // are not in the original whitelist)
-            const randomAddrs = generateRandomAddresses(10);
+        it("Should fail to mint if sales are inactive", async () => {
+            await contract.connect(owner).toggleSaleOff();
 
-            // Confirm that these addresses are not in the contract whitelist
-            for (let i = 0; i < randomAddrs.length; i++) {
-                hexProof = getHexProof(whitelistOG, randomAddrs[i]);
-                expect(hexProof.length).to.equal(0);
-                expect(await contract.isWhitelistedSF(randomAddrs[i], hexProof)).to.equal(false);
-            }
-            const newWhitelist = randomAddrs;
-            const newMerkleTree = getMerkleTreeFromWhitelist(newWhitelist);
-            await contract.setWhitelistSF(newMerkleTree.getRoot());
-
-            for (let i = 0; i < newWhitelist.length; i++) {
-                hexProof = getHexProof(newWhitelist, randomAddrs[i]);
-                expect(await contract.isWhitelistedSF(newWhitelist[i], hexProof)).to.equal(true);
-            }
-        });
-
-        it("A non whitelisted user with a correct hexProof is not whitelisted", async () => {
-            const whitelistedAddress = whitelistOG[getRandomInt(whitelistOG.length)];
-            hexProof = getHexProof(whitelistOG, whitelistedAddress);
-            expect(hexProof.length).to.be.greaterThan(0);
-
-            const randomAddress = ethers.Wallet.createRandom().address;
-            expect(await contract.isWhitelistedSF(randomAddress, hexProof)).to.equal(false);
-        });
-
-        it("A whitelisted user with an incorrect hexProof is not whitelisted", async () => {
-            const randomAddress = ethers.Wallet.createRandom().address;
-            hexProof = getHexProof(whitelistOG, randomAddress);
-            expect(hexProof.length).to.eq(0);
-
-            const whitelistedAddress = whitelistOG[getRandomInt(whitelistOG.length)];
-            expect(await contract.isWhitelistedSF(whitelistedAddress, hexProof)).to.equal(false);
-        });
-
-        it("A whitelisted user can only mint if the phase is active", async () => {
-            await contract.setWhitelistSale(); // any other sale
-            hexProof = getHexProof(whitelistOG, bob.address);
-            expect(hexProof.length).to.be.greaterThan(0);
-            await expect(contract.connect(bob).mintWhitelistedSF(1, hexProof)).to.be.revertedWith(
-                "Super Frens sale is not active"
-            );
-        });
-
-        it("Should fail if minting is paused", async () => {
-            await contract.setPaused(true);
-
-            await contract.setWhitelistSFSale();
-            hexProof = getHexProof(whitelistOG, bob.address);
+            hexProof = getHexProof(whitelist, alice.address);
             await expect(
-                contract.connect(bob).mintWhitelistedSF(1, hexProof, { value: etherPrice(costWhitelistedOG) })
-            ).to.be.revertedWith("Please wait until unpaused");
+                contract.connect(alice).mintWLSale(1, hexProof, { value: etherPrice(costWhitelisted) })
+            ).to.be.revertedWith("Sale must be active before you can mint");
         });
 
-        it("Should succeed if minting is unpaused", async () => {
-            await contract.setPaused(false);
+        it("Should succeed to mint if sales are active", async () => {
+            await contract.setOnlyWhitelisted();
 
-            await contract.setWhitelistSFSale();
-            hexProof = getHexProof(whitelistOG, bob.address);
-            await contract.connect(bob).mintWhitelistedSF(1, hexProof, { value: etherPrice(costWhitelistedOG) });
-            expect(await contract.balanceOf(bob.address)).to.equal(1);
+            hexProof = getHexProof(whitelist, alice.address);
+            await contract.connect(alice).mintWLSale(1, hexProof, { value: etherPrice(costWhitelisted) });
+            expect(await contract.balanceOf(alice.address)).to.equal(1);
         });
 
-        it("Users cannot mint more than max amount", async () => {
-            await contract.setWhitelistSFSale();
-            hexProof = getHexProof(whitelistOG, bob.address);
+        it("Cannot mint more than max mint amount", async () => {
+            await contract.setOnlyWhitelisted();
+
+            hexProof = getHexProof(whitelist, alice.address);
+            await contract.connect(alice).mintWLSale(maxMintAmountWhitelist - 1, hexProof, {
+                value: etherPrice(costWhitelisted, maxMintAmountWhitelist - 1),
+            });
             await expect(
-                contract.connect(bob).mintWhitelistedSF(maxMintAmountWhitelistOG + 1, hexProof, {
-                    value: etherPrice(costWhitelistedOG, maxMintAmountWhitelistOG + 1),
+                contract.connect(alice).mintWLSale(2, hexProof, {
+                    value: etherPrice(costWhitelisted, 2),
                 })
-            ).to.be.revertedWith("Max mint amount exceeded");
+            ).to.be.revertedWith("Sender is trying to mint more than their whitelist amount");
         });
 
-        it("If a Super Fren user mints it will have to wait 'blockTransferDaysSF' days to be able to transfer or list his tokens", async () => {
-            await contract.setWhitelistSFSale();
-            hexProof = getHexProof(whitelistOG, bob.address);
-            await contract.connect(bob).mintWhitelistedSF(1, hexProof, { value: etherPrice(costWhitelistedOG) });
-            expect(await contract.balanceOf(bob.address)).to.equal(1);
-            await expect(contract.transferFrom(bob.address, alice.address, 1)).to.be.revertedWith(
-                "Cannot transfer free minted tokens until enough time has passed"
-            );
-            await expect(contract.connect(bob).setApprovalForAll(alice.address, true)).to.be.revertedWith(
-                "Cannot list free minted tokens until enough time has passed"
-            );
+        it("Cannot mint more than address max amount", async () => {
+            await contract.setOnlyWhitelisted();
+            await contract.setWLMax(maxSupply + 100); // set more than maxAmount so this max limit is not reached
+
+            hexProof = getHexProof(whitelist, alice.address);
+            await contract.connect(alice).mintWLSale(maxMintAmount - 1, hexProof, {
+                value: etherPrice(costWhitelisted, maxMintAmount - 1),
+            });
+            await expect(
+                contract.connect(alice).mintWLSale(2, hexProof, {
+                    value: etherPrice(costWhitelisted, 2),
+                })
+            ).to.be.revertedWith("Sender is trying to mint more than allocated tokens");
         });
 
-        it("If a Super Fren user minted and enough time passed then he can transfer or list", async () => {
-            await contract.setWhitelistSFSale();
-            hexProof = getHexProof(whitelistOG, bob.address);
-            await contract.connect(bob).mintWhitelistedSF(1, hexProof, { value: etherPrice(costWhitelistedOG) });
-            await expect(contract.connect(bob).transferFrom(bob.address, alice.address, 1)).to.be.revertedWith(
-                "Cannot transfer free minted tokens until enough time has passed"
-            );
-            await expect(contract.connect(bob).setApprovalForAll(alice.address, true)).to.be.revertedWith(
-                "Cannot list free minted tokens until enough time has passed"
-            );
+        it("Cannot mint more than collection max supply", async () => {
+            await contract.setOnlyWL();
+            await contract.setOGMax(maxSupply + 100); // set more than maxAmount so this max limit is not reached
+            await contract.setMaxAddress(maxSupply + 100); // set more than maxAmount so this max limit is not reached
 
-            // Wait almost enough time
-            await network.provider.send("evm_increaseTime", [(await contract.blockTransferSecondsSF()) - 100]);
-            await network.provider.send("evm_mine");
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await contract.connect(alice).mintOGSale(maxSupply - 1, hexProof, {
+                value: etherPrice(costWhitelistedOG, maxSupply - 1),
+            });
 
-            await expect(contract.connect(bob).transferFrom(bob.address, alice.address, 1)).to.be.revertedWith(
-                "Cannot transfer free minted tokens until enough time has passed"
-            );
-            await expect(contract.connect(bob).setApprovalForAll(alice.address, true)).to.be.revertedWith(
-                "Cannot list free minted tokens until enough time has passed"
-            );
+            await expect(
+                contract.connect(alice).mintOGSale(2, hexProof, {
+                    value: etherPrice(costWhitelistedOG, 2),
+                })
+            ).to.be.revertedWith("This would exceed the max number of mints allowed");
+        });
 
-            await network.provider.send("evm_increaseTime", [200]);
-            await network.provider.send("evm_mine");
+        it("Should fail if payed value is low", async () => {
+            await contract.setOnlyOG();
 
-            await contract.connect(bob).setApprovalForAll(alice.address, true);
-            await contract.connect(bob).transferFrom(bob.address, alice.address, 1);
+            hexProof = getHexProof(whitelistOG, alice.address);
+            await expect(
+                contract.connect(alice).mintOGSale(1, hexProof, { value: etherPrice(costWhitelistedOG * 0.9) })
+            ).to.be.revertedWith("Not enough ether to mint, please add more eth to your wallet");
         });
     });
 

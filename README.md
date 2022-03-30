@@ -75,9 +75,10 @@ You can find the code of all tests in test/Empire.test.js.
 
 If you'd like to run the tests yourself, clone this repository and run the following commands from inside the repository's directory:
 
-```
-npm i
-npx hardhat test
+```js
+yarn //to install dependencies
+
+npx hardhat test //to run the test suite
 ```
 
 

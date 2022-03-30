@@ -1,5 +1,6 @@
 # TribeX-Test-Suite
 
+## Introduction
 This is an audit of the Tribe X / Empire smart contract(https://etherscan.io/address/0xff9981d2c6c6d612e03e4a32f5488e552eeae285) to identify vulnerabilities.
 
 We analysed the code and wrote a set of unit tests to check that every feature of the smart contract works as expected.
@@ -10,7 +11,10 @@ From analysing the code we found only a few minor details: there are some unused
 
 For those standard libraries we made sure they are exactly the ones provided by OpenZeppelin and Azuki and that they haven't been tempered with by malicious actors.
 
-## Tests
+## Out of Scope
+Note that the unit tests below does not include nor addresses any issues that may happen during the deployment process or the security of the owner's or deployer's private keys. Meaning that even if the smart contract code is secure, but if the deployment or the security of the owner's wallet is compromized, then this mean that the funds in the smart contract or any `onlyOwner` functions would be compromised as well.  
+
+## Tests (In Scope)
 
 Following a code analysis we wrote a comprehensive list of unit tests to guarantee through code that all functions work as expected.
 
@@ -76,6 +80,7 @@ npm i
 npx hardhat test
 ```
 
-### Conclusion
+
+## Conclusion
 
 Based on our analysis and tests we couldn't find any vulnerabilities and commit that the contract is deemed safe for reopening the mint.

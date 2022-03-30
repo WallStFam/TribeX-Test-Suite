@@ -1,6 +1,4 @@
-# TRIBE-X
-
-# TRIBE-X
+# TribeX-Test-Suite
 
 This is an audit of the Tribe X / Empire smart contract(https://etherscan.io/address/0xff9981d2c6c6d612e03e4a32f5488e552eeae285) to identify vulnerabilities.
 

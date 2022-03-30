@@ -5,20 +5,20 @@ This is an audit of the Tribe X / Empire smart contract(https://etherscan.io/add
 
 We analysed the code and wrote a set of unit tests to check that every feature of the smart contract works as expected.
 
-We payed special attention to mint and withdraw functions to evaluate if opening the mint back again would be safe for both users and developers.
+We paid special attention to mint and withdraw functions to evaluate if opening the mint back again would be safe for both users and developers.
 
-From analysing the code we found only a few minor details: there are some unused variables and a duplicated functions. Besides that, this is a standard NFT collection contract that uses standard and tested libraries from openzeppelin and ERC721A which are safe.
+From analysing the code we found only a few minor details: there are some unused variables and a duplicated function. Besides that, this is a standard NFT collection contract that uses standard and tested libraries from OpenZeppelin and ERC721A.
 
-For those standard libraries we made sure they are exactly the ones provided by OpenZeppelin and Azuki and that they haven't been tempered with by malicious actors.
+For those standard libraries we made sure they are exactly the ones provided by OpenZeppelin and Azuki and that they haven't been tampered with by malicious actors.
 
 ## Out of Scope
-Note that the unit tests below does not include nor addresses any issues that may happen during the deployment process or the security of the owner's or deployer's private keys. Meaning that even if the smart contract code is secure, but if the deployment or the security of the owner's wallet is compromized, then this mean that the funds in the smart contract or any `onlyOwner` functions would be compromised as well.  
+Note that the unit tests below does not include nor addresses any issues that may happen during the deployment process or the security of the owner's or deployer's private keys. Meaning that even if the smart contract code is secure, but if the deployment or the security of the owner's wallet is compromised, then this mean that the funds in the smart contract or any `onlyOwner` functions would be compromised as well.  
 
 ## Tests (In Scope)
 
-Following a code analysis we wrote a comprehensive list of unit tests to guarantee through code that all functions work as expected.
+Following a code analysis, we wrote a comprehensive list of unit tests to guarantee through code that all functions work as expected.
 
-Here is the list of tests we run against the smart contract:
+Here is the list of tests we ran against the smart contract:
 
     Whitelist OG
       ✔ Only the owner can set a new OG whitelist (46ms)
@@ -84,4 +84,4 @@ npx hardhat test //to run the test suite
 
 ## Conclusion
 
-Based on our analysis and tests we couldn't find any vulnerabilities and commit that the contract is deemed safe for reopening the mint.
+Based on our analysis and tests we could not find any vulnerabilities and commit that the contract is deemed safe for reopening the mint.
